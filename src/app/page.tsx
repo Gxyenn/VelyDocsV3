@@ -39,7 +39,7 @@ const apiEndpoints = {
   otakudesu: {
     name: 'Otakudesu',
     icon: '🎬',
-    baseUrl: 'https://otakudesu.best',
+    baseUrl: 'https://otakudesu.cloud',
     description: 'Situs streaming dan download anime subtitle Indonesia',
     endpoints: [
       {

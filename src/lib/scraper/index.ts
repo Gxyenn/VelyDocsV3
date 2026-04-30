@@ -171,7 +171,7 @@ function getRandomUserAgent(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-async function randomDelay(min: number = 1500, max: number = 4000) {
+async function randomDelay(min: number = 2000, max: number = 5000) {
   const ms = Math.floor(Math.random() * (max - min + 1) + min);
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -180,14 +180,18 @@ async function randomDelay(min: number = 1500, max: number = 4000) {
 export async function fetchWithRetry(
   url: string, 
   options: any = {}, 
-  retries: number = 3
+  retries: number = 5
 ): Promise<ScraperResponse<string>> {
   let lastError: any = null;
   
   for (let i = 0; i < retries; i++) {
     try {
-      // Delay before request to avoid spamming
-      await randomDelay();
+      // Exponentially increase delay on each retry
+      const delayTime = i === 0 ? 0 : (2000 * Math.pow(2, i-1)) + (Math.random() * 1000);
+      if (delayTime > 0) await new Promise(r => setTimeout(r, delayTime));
+      
+      // Basic random delay to avoid rapid requests
+      await randomDelay(1500, 3000);
 
       const ua = getRandomUserAgent();
       const defaultOptions = {
@@ -196,12 +200,22 @@ export async function fetchWithRetry(
         headers: {
           'User-Agent': ua,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-          'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
+          'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
           'Referer': 'https://www.google.com/',
+          'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="121", "Google Chrome";v="121"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'cross-site',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
           ...options.headers
         },
-        timeout: 15000,
-        formData: options.body, // cloudscraper uses formData for POST
+        timeout: 20000,
+        gzip: true,
+        jar: true, // Enable cookies
+        formData: options.body, 
         ...options
       };
 
@@ -317,7 +331,7 @@ export async function fetchIframeUrl(dataContent: string): Promise<ScraperRespon
 
 // ===================== OTAKUDESU SCRAPER =====================
 export const OtakudesuScraper = {
-  baseUrl: 'https://otakudesu.best',
+  baseUrl: 'https://otakudesu.cloud',
 
   // ===================== HOME PAGE =====================
   parseHome(html: string | null): { ongoing: AnimeInfo[]; complete: AnimeInfo[] } {
