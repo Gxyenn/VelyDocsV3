@@ -159,19 +159,17 @@ function decodeBase64(str: string): string {
 
 // ===================== ANTI-BAN UTILITIES =====================
 const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:122.0) Gecko/20100101 Firefox/122.0',
 ];
 
 function getRandomUserAgent(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-async function randomDelay(min: number = 500, max: number = 1500) {
+async function randomDelay(min: number = 500, max: number = 1200) {
   const ms = Math.floor(Math.random() * (max - min + 1) + min);
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -180,17 +178,14 @@ async function randomDelay(min: number = 500, max: number = 1500) {
 export async function fetchWithRetry(
   url: string, 
   options: any = {}, 
-  retries: number = 2 // Reduced for Serverless (Vercel 10s limit)
+  retries: number = 2
 ): Promise<ScraperResponse<string>> {
   let lastError: any = null;
   
   for (let i = 0; i < retries; i++) {
     try {
-      // Shorter delay for serverless
-      const delayTime = i === 0 ? 0 : 1000 + (Math.random() * 500);
-      if (delayTime > 0) await new Promise(r => setTimeout(r, delayTime));
-      
-      await randomDelay(500, 1000);
+      if (i > 0) await new Promise(r => setTimeout(r, 1000 + (Math.random() * 500)));
+      await randomDelay();
 
       const ua = getRandomUserAgent();
       const defaultOptions = {
@@ -200,20 +195,23 @@ export async function fetchWithRetry(
           'User-Agent': ua,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
           'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-          'Referer': 'https://www.google.com/',
-          'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="121", "Google Chrome";v="121"',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Referer': 'https://otakudesu.cloud/',
+          'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="122", "Google Chrome";v="122"',
           'Sec-Ch-Ua-Mobile': '?0',
           'Sec-Ch-Ua-Platform': '"Windows"',
           'Sec-Fetch-Dest': 'document',
           'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'cross-site',
+          'Sec-Fetch-Site': 'same-origin',
           'Sec-Fetch-User': '?1',
           'Upgrade-Insecure-Requests': '1',
+          'Cache-Control': 'max-age=0',
           ...options.headers
         },
-        timeout: 8000, // Reduced to fit Vercel 10s limit
+        timeout: 9000,
         gzip: true,
-        jar: true, 
+        jar: true,
+        followAllRedirects: true,
         formData: options.body, 
         ...options
       };
