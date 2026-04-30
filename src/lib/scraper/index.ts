@@ -171,7 +171,7 @@ function getRandomUserAgent(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-async function randomDelay(min: number = 2000, max: number = 5000) {
+async function randomDelay(min: number = 500, max: number = 1500) {
   const ms = Math.floor(Math.random() * (max - min + 1) + min);
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -180,18 +180,17 @@ async function randomDelay(min: number = 2000, max: number = 5000) {
 export async function fetchWithRetry(
   url: string, 
   options: any = {}, 
-  retries: number = 5
+  retries: number = 2 // Reduced for Serverless (Vercel 10s limit)
 ): Promise<ScraperResponse<string>> {
   let lastError: any = null;
   
   for (let i = 0; i < retries; i++) {
     try {
-      // Exponentially increase delay on each retry
-      const delayTime = i === 0 ? 0 : (2000 * Math.pow(2, i-1)) + (Math.random() * 1000);
+      // Shorter delay for serverless
+      const delayTime = i === 0 ? 0 : 1000 + (Math.random() * 500);
       if (delayTime > 0) await new Promise(r => setTimeout(r, delayTime));
       
-      // Basic random delay to avoid rapid requests
-      await randomDelay(1500, 3000);
+      await randomDelay(500, 1000);
 
       const ua = getRandomUserAgent();
       const defaultOptions = {
@@ -212,9 +211,9 @@ export async function fetchWithRetry(
           'Upgrade-Insecure-Requests': '1',
           ...options.headers
         },
-        timeout: 20000,
+        timeout: 8000, // Reduced to fit Vercel 10s limit
         gzip: true,
-        jar: true, // Enable cookies
+        jar: true, 
         formData: options.body, 
         ...options
       };
