@@ -4,13 +4,13 @@ import { createApiResponse, createErrorResponse } from '@/lib/api-response';
 
 export async function GET(request: NextRequest) {
   try {
-    const html = await fetchHtml(`${OtakudesuScraper.baseUrl}/jadwal-rilis/`);
+    const result = await fetchHtml(`${OtakudesuScraper.baseUrl}/jadwal-rilis/`);
     
-    if (!html) {
-      return createErrorResponse(request, 'Failed to fetch schedule', 500);
+    if (result.status === 'error' || !result.data) {
+      return createErrorResponse(request, result.message || 'Failed to fetch schedule', 500);
     }
     
-    const schedule = OtakudesuScraper.parseSchedule(html);
+    const schedule = OtakudesuScraper.parseSchedule(result.data);
     
     // Convert to object format
     const scheduleData: Record<string, any[]> = {};

@@ -10,13 +10,13 @@ export async function GET(
     const { slug } = await params;
     const url = `${OtakudesuScraper.baseUrl}/episode/${slug}/`;
 
-    const html = await fetchHtml(url);
+    const result = await fetchHtml(url);
     
-    if (!html) {
-      return createErrorResponse(request, 'Failed to fetch episode page', 404, { url });
+    if (result.status === 'error' || !result.data) {
+      return createErrorResponse(request, result.message || 'Failed to fetch episode page', 404, { url });
     }
 
-    const servers = OtakudesuScraper.parseServerList(html);
+    const servers = OtakudesuScraper.parseServerList(result.data);
 
     // Fetch iframe URLs for each server
     const qualitiesWithIframe = await Promise.all(
@@ -24,10 +24,10 @@ export async function GET(
         quality: quality.quality,
         servers: await Promise.all(
           quality.servers.map(async (server) => {
-            const iframeUrl = await fetchIframeUrl(server.dataContent);
+            const iframeResult = await fetchIframeUrl(server.dataContent);
             return {
               ...server,
-              iframeUrl: iframeUrl || undefined
+              iframeUrl: iframeResult.status === 'success' && iframeResult.data ? iframeResult.data : undefined
             };
           })
         )

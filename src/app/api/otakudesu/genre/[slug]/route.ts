@@ -19,13 +19,13 @@ export async function GET(
       ? `${OtakudesuScraper.baseUrl}/genres/${slug}/`
       : `${OtakudesuScraper.baseUrl}/genres/${slug}/page/${page}/`;
     
-    const html = await fetchHtml(url);
+    const fetchResult = await fetchHtml(url);
     
-    if (!html) {
-      return createErrorResponse(request, 'Genre not found', 404, { slug });
+    if (fetchResult.status === 'error' || !fetchResult.data) {
+      return createErrorResponse(request, fetchResult.message || 'Genre not found', 404, { slug });
     }
     
-    const result = OtakudesuScraper.parseAnimeByGenre(html);
+    const result = OtakudesuScraper.parseAnimeByGenre(fetchResult.data);
     
     return createApiResponse(request, `genre/${slug}`, {
       status: 'success',

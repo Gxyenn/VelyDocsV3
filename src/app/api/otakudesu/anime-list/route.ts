@@ -11,13 +11,13 @@ export async function GET(request: NextRequest) {
       ? `${OtakudesuScraper.baseUrl}/anime-list/`
       : `${OtakudesuScraper.baseUrl}/anime-list/page/${page}/`;
     
-    const html = await fetchHtml(url);
+    const fetchResult = await fetchHtml(url);
     
-    if (!html) {
-      return createErrorResponse(request, 'Failed to fetch anime list', 500);
+    if (fetchResult.status === 'error' || !fetchResult.data) {
+      return createErrorResponse(request, fetchResult.message || 'Failed to fetch anime list', 500);
     }
     
-    const result = OtakudesuScraper.parseAnimeList(html);
+    const result = OtakudesuScraper.parseAnimeList(fetchResult.data);
     
     return createApiResponse(request, 'anime-list', {
       status: 'success',

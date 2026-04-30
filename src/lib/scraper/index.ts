@@ -1,6 +1,13 @@
 import * as cheerio from 'cheerio';
+const cloudscraper = require('cloudscraper');
 
 // ===================== TYPES =====================
+export interface ScraperResponse<T = any> {
+  status: 'success' | 'error';
+  data: T | null;
+  message: string;
+}
+
 export interface AnimeInfo {
   title: string;
   link: string;
@@ -48,7 +55,7 @@ export interface EpisodeDetail {
   animeTitle?: string;
   animeSlug?: string;
   image?: string;
-  iframeUrl?: string; // Main player iframe
+  iframeUrl?: string;
   download: DownloadQuality[];
 }
 
@@ -123,6 +130,7 @@ function cleanText(text: string | undefined): string {
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
+    .replace(/&get;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/\s+/g, ' ')
@@ -151,136 +159,159 @@ function decodeBase64(str: string): string {
 
 // ===================== ANTI-BAN UTILITIES =====================
 const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:122.0) Gecko/20100101 Firefox/122.0',
 ];
 
 function getRandomUserAgent(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
-async function delay(ms: number) {
+async function randomDelay(min: number = 1500, max: number = 4000) {
+  const ms = Math.floor(Math.random() * (max - min + 1) + min);
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// ===================== FETCH HTML =====================
-export async function fetchHtml(url: string): Promise<string | null> {
-  try {
-    // Random delay between 500ms and 1500ms to mimic human behavior
-    await delay(500 + Math.random() * 1000);
+// ===================== FETCH WITH RETRY (CLOUDSCRAPER) =====================
+export async function fetchWithRetry(
+  url: string, 
+  options: any = {}, 
+  retries: number = 3
+): Promise<ScraperResponse<string>> {
+  let lastError: any = null;
+  
+  for (let i = 0; i < retries; i++) {
+    try {
+      // Delay before request to avoid spamming
+      await randomDelay();
 
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': getRandomUserAgent(),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Referer': 'https://www.google.com/',
-        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'cross-site',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-      },
-      redirect: 'follow',
-    });
-    
-    if (!response.ok) {
-      console.error(`Failed to fetch ${url}: ${response.status}`);
-      return null;
+      const ua = getRandomUserAgent();
+      const defaultOptions = {
+        uri: url,
+        method: options.method || 'GET',
+        headers: {
+          'User-Agent': ua,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
+          'Referer': 'https://www.google.com/',
+          ...options.headers
+        },
+        timeout: 15000,
+        formData: options.body, // cloudscraper uses formData for POST
+        ...options
+      };
+
+      const response = await cloudscraper(defaultOptions);
+      
+      if (!response) {
+        throw new Error('Empty response from server');
+      }
+
+      return {
+        status: 'success',
+        data: typeof response === 'string' ? response : JSON.stringify(response),
+        message: 'Successfully fetched data'
+      };
+    } catch (error: any) {
+      lastError = error;
+      const statusCode = error.statusCode || error.response?.status || 'Unknown';
+      console.error(`[Retry ${i + 1}/${retries}] Failed to fetch ${url}. Status: ${statusCode}. Message: ${error.message}`);
+      
+      // Additional delay on error
+      if (i < retries - 1) {
+        await randomDelay(2000, 5000);
+      }
     }
-    
-    return await response.text();
-  } catch (error) {
-    console.error(`Error fetching ${url}:`, error);
-    return null;
   }
+
+  return {
+    status: 'error',
+    data: null,
+    message: `Failed after ${retries} retries. Last error: ${lastError?.message || 'Unknown'}`
+  };
+}
+
+// Wrapper for HTML fetching
+export async function fetchHtml(url: string): Promise<ScraperResponse<string>> {
+  return await fetchWithRetry(url);
 }
 
 // ===================== FETCH IFRAME URL =====================
 let cachedNonce: string | null = null;
 
-export async function fetchIframeUrl(dataContent: string): Promise<string | null> {
+export async function fetchIframeUrl(dataContent: string): Promise<ScraperResponse<string>> {
   try {
     const ajaxUrl = `${OtakudesuScraper.baseUrl}/wp-admin/admin-ajax.php`;
     
     // Get nonce if not cached
     if (!cachedNonce) {
-      const nonceFormData = new URLSearchParams();
-      nonceFormData.append('action', 'aa1208d27f29ca340c92c66d1926f13f');
-      
-      const nonceResponse = await fetch(ajaxUrl, {
+      const nonceResult = await fetchWithRetry(ajaxUrl, {
         method: 'POST',
         headers: {
-          'User-Agent': getRandomUserAgent(),
-          'Accept': 'application/json, text/javascript, */*; q=0.01',
-          'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
           'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
           'X-Requested-With': 'XMLHttpRequest',
           'Origin': OtakudesuScraper.baseUrl,
           'Referer': OtakudesuScraper.baseUrl,
         },
-        body: nonceFormData.toString(),
+        body: { action: 'aa1208d27f29ca340c92c66d1926f13f' }
       });
       
-      const nonceData = await nonceResponse.json() as { data?: string };
-      if (nonceData.data) {
-        cachedNonce = nonceData.data;
+      if (nonceResult.status === 'success' && nonceResult.data) {
+        try {
+          const nonceData = JSON.parse(nonceResult.data);
+          if (nonceData.data) {
+            cachedNonce = nonceData.data;
+          }
+        } catch (e) {
+          console.error('Failed to parse nonce response');
+        }
       }
     }
     
     if (!cachedNonce) {
-      return null;
+      return { status: 'error', data: null, message: 'Could not obtain AJAX nonce' };
     }
     
-    // Parse data-content to get id, i, q
+    // Parse data-content
     const decodedData = JSON.parse(decodeBase64(dataContent));
     
     // Get iframe
-    const iframeFormData = new URLSearchParams();
-    iframeFormData.append('action', '2a3505c93b0035d3f455df82bf976b84');
-    iframeFormData.append('nonce', cachedNonce);
-    iframeFormData.append('id', String(decodedData.id));
-    iframeFormData.append('i', String(decodedData.i));
-    iframeFormData.append('q', String(decodedData.q));
-    
-    const iframeResponse = await fetch(ajaxUrl, {
+    const iframeResult = await fetchWithRetry(ajaxUrl, {
       method: 'POST',
       headers: {
-        'User-Agent': getRandomUserAgent(),
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'X-Requested-With': 'XMLHttpRequest',
         'Origin': OtakudesuScraper.baseUrl,
         'Referer': OtakudesuScraper.baseUrl,
       },
-      body: iframeFormData.toString(),
+      body: {
+        action: '2a3505c93b0035d3f455df82bf976b84',
+        nonce: cachedNonce,
+        id: String(decodedData.id),
+        i: String(decodedData.i),
+        q: String(decodedData.q)
+      }
     });
     
-    const iframeData = await iframeResponse.json() as { data?: string };
-    if (iframeData.data) {
-      // The response is base64 encoded HTML with iframe
-      const html = decodeBase64(iframeData.data);
-      // Extract src from iframe
-      const srcMatch = html.match(/src=["']([^"']+)["']/);
-      if (srcMatch) {
-        return srcMatch[1];
+    if (iframeResult.status === 'success' && iframeResult.data) {
+      const iframeData = JSON.parse(iframeResult.data);
+      if (iframeData.data) {
+        const html = decodeBase64(iframeData.data);
+        const srcMatch = html.match(/src=["']([^"']+)["']/);
+        if (srcMatch) {
+          return { status: 'success', data: srcMatch[1], message: 'Successfully fetched iframe URL' };
+        }
       }
     }
     
-    return null;
-  } catch (error) {
+    return { status: 'error', data: null, message: 'Could not extract iframe URL' };
+  } catch (error: any) {
     console.error('Error fetching iframe URL:', error);
-    return null;
+    return { status: 'error', data: null, message: error.message };
   }
 }
 
@@ -289,14 +320,14 @@ export const OtakudesuScraper = {
   baseUrl: 'https://otakudesu.best',
 
   // ===================== HOME PAGE =====================
-  parseHome(html: string): { ongoing: AnimeInfo[]; complete: AnimeInfo[] } {
+  parseHome(html: string | null): { ongoing: AnimeInfo[]; complete: AnimeInfo[] } {
+    if (!html) return { ongoing: [], complete: [] };
     const $ = cheerio.load(html);
     const ongoing: AnimeInfo[] = [];
     const complete: AnimeInfo[] = [];
     
     const days = ['senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu', 'random'];
 
-    // Parse each section - support multiple selectors
     $('.rseries, .rapi, .venz').each((_, section) => {
       const $section = $(section);
       
@@ -304,33 +335,19 @@ export const OtakudesuScraper = {
         const $el = $(el);
         const link = $el.find('.thumb a').attr('href') || '';
         const title = cleanText($el.find('.jdlflm').text());
-        
-        // Episode - extract number from "Episode X"
         const epText = cleanText($el.find('.epz').text());
         const episode = extractNumber(epText);
-        
-        // Day or Score
         const dayOrScore = cleanText($el.find('.epztipe').text());
-        
-        // Date uploaded
         const uploadedAt = cleanText($el.find('.newnime').text());
-        
-        // Image
         const image = $el.find('.thumb img').attr('src') || '';
 
         if (title && link) {
           const animeInfo: AnimeInfo = {
-            title,
-            link,
-            slug: extractSlug(link),
-            episode,
-            image,
-            uploadedAt
+            title, link, slug: extractSlug(link),
+            episode, image, uploadedAt
           };
 
-          // Determine if ongoing (has day name) or complete (has score)
           const isOngoing = days.some(d => dayOrScore.toLowerCase().includes(d));
-          
           if (isOngoing) {
             animeInfo.day = dayOrScore;
             ongoing.push(animeInfo);
@@ -342,79 +359,32 @@ export const OtakudesuScraper = {
       });
     });
 
-    // If still empty, try more generic selectors
-    if (ongoing.length === 0 && complete.length === 0) {
-      $('.detpost').each((_, el) => {
-        const $el = $(el);
-        const link = $el.find('a').first().attr('href') || '';
-        const title = cleanText($el.find('h2, .jdlflm').text());
-        if (title && link && link.includes('/anime/')) {
-          const info: AnimeInfo = {
-            title,
-            link,
-            slug: extractSlug(link),
-            image: $el.find('img').attr('src')
-          };
-          // Heuristic: if it has "Episode", it's likely ongoing
-          if ($el.text().includes('Episode')) ongoing.push(info);
-          else complete.push(info);
-        }
-      });
-    }
-
     return { ongoing, complete };
   },
 
-  // ===================== ANIME LIST WITH PAGINATION =====================
-  parseAnimeList(html: string): PaginatedResult<AnimeInfo> {
+  // ===================== ANIME LIST =====================
+  parseAnimeList(html: string | null): PaginatedResult<AnimeInfo> {
+    if (!html) return { data: [], pagination: { totalPages: 1, currentPage: 1, nextPage: false } };
     const $ = cheerio.load(html);
     const list: AnimeInfo[] = [];
 
-    // Parse anime list
     $('.venz .detpost, .col-md-4 .detpost, .archive .detpost').each((_, el) => {
       const $el = $(el);
       const link = $el.find('.thumb a').attr('href') || '';
       const title = cleanText($el.find('.jdlflm').text());
       const image = $el.find('.thumb img').attr('src') || '';
-      
-      // Try to get episode count or status
       const epText = cleanText($el.find('.epz').text());
       const episode = extractNumber(epText);
 
       if (title && link && link.includes('/anime/')) {
-        list.push({
-          title,
-          link,
-          slug: extractSlug(link),
-          episode,
-          image
-        });
+        list.push({ title, link, slug: extractSlug(link), episode, image });
       }
     });
 
-    // If above selector didn't work, try alternative
-    if (list.length === 0) {
-      $('a[href*="/anime/"]').each((_, el) => {
-        const $el = $(el);
-        const link = $el.attr('href') || '';
-        const title = cleanText($el.find('h4, h2, .jdlflm').text() || $el.text());
-        
-        if (title && link && link.includes('/anime/') && !link.includes('page') && title.length > 2) {
-          list.push({
-            title,
-            link,
-            slug: extractSlug(link)
-          });
-        }
-      });
-    }
-
-    // Remove duplicates
     const uniqueList = list.filter((anime, index, self) =>
       index === self.findIndex(a => a.slug === anime.slug)
     );
 
-    // Check pagination
     const currentPage = parseInt($('.pagination .current, .page-numbers.current').text() || '1');
     const hasNextPage = $('.pagination .next, .page-numbers.next').length > 0;
     const totalPages = parseInt($('.pagination .page-numbers').not('.next').not('.prev').last().text()) || 1;
@@ -430,7 +400,8 @@ export const OtakudesuScraper = {
   },
 
   // ===================== ANIME DETAIL =====================
-  parseAnimeDetail(html: string): AnimeDetail {
+  parseAnimeDetail(html: string | null): AnimeDetail | null {
+    if (!html) return null;
     const $ = cheerio.load(html);
     const info: AnimeDetail = {
       title: '',
@@ -438,10 +409,9 @@ export const OtakudesuScraper = {
       episodes: []
     };
 
-    // Title
     info.title = cleanText($('.jdlrx h1').text()) || cleanText($('h1').first().text());
+    if (!info.title) return null;
 
-    // Parse info from infozingle
     $('.infozingle p, .fotoanime .info p').each((_, el) => {
       const $p = $(el);
       const text = $p.text();
@@ -468,19 +438,14 @@ export const OtakudesuScraper = {
       }
     });
 
-    // Genres
     $('.infozingle a[href*="/genres/"], .genrex a[href*="/genres/"]').each((_, el) => {
       const genre = cleanText($(el).text());
       if (genre) info.genre.push(genre);
     });
 
-    // Image
     info.image = $('.fotoanime img, .thumb img').attr('src') || '';
-
-    // Synopsis
     info.synopsis = cleanText($('.sinopc, .sinopsis, #sinopsis').text());
 
-    // Episodes
     $('.episodelist li, .epslist li').each((_, el) => {
       const $a = $(el).find('a');
       const link = $a.attr('href') || '';
@@ -488,16 +453,10 @@ export const OtakudesuScraper = {
       const date = cleanText($(el).find('.zeebr, .date, span').last().text());
 
       if (link && title && link.includes('/episode/')) {
-        info.episodes.push({
-          title,
-          link,
-          slug: extractSlug(link),
-          date
-        });
+        info.episodes.push({ title, link, slug: extractSlug(link), date });
       }
     });
 
-    // Batch link
     const batchLink = $('a[href*="batch"]').attr('href');
     if (batchLink) {
       info.batch = {
@@ -509,202 +468,84 @@ export const OtakudesuScraper = {
     return info;
   },
 
-  // ===================== EPISODE DETAIL WITH MAXIMAL STREAMING =====================
-  parseEpisodeDetail(html: string): EpisodeDetail {
+  // ===================== EPISODE DETAIL =====================
+  parseEpisodeDetail(html: string | null): EpisodeDetail | null {
+    if (!html) return null;
     const $ = cheerio.load(html);
     const result: EpisodeDetail = {
       title: '',
       download: []
     };
 
-    // Title
     result.title = cleanText($('.jdlrx h1, h1.title, .posttl').text());
+    if (!result.title) return null;
 
-    // Anime title and slug
     const animeLink = $('.navig a, .prevnext a[href*="/anime/"]').attr('href') || '';
     result.animeSlug = extractSlug(animeLink);
     result.animeTitle = cleanText($('.navig a, .prevnext a[href*="/anime/"]').text());
-
-    // Image
     result.image = $('.post-thumbnail img, .thumb img').attr('src') || '';
+    result.iframeUrl = $('#embed_holder iframe, .streamiframe iframe, .player iframe').attr('src') || '';
 
-    // ===================== MAIN IFRAME PLAYER (Default) =====================
-    const mainIframe = $('#embed_holder iframe, .streamiframe iframe, .player iframe').attr('src') || '';
-    result.iframeUrl = mainIframe;
-
-    // ===================== DOWNLOAD LINKS =====================
     const downloadMap: Map<string, DownloadQuality> = new Map();
 
-    // Parse download links - multiple patterns
     $('.download ul li, .dl-box li, .downloadlink li, .boxdl li').each((_, el) => {
       const $li = $(el);
-      
-      // Get quality (360p, 480p, 720p, etc.)
       const qualityText = cleanText($li.find('strong, .quality, .res').first().text());
       const quality = qualityText || 'Unknown';
-
-      // Get all download servers for this quality
       const servers: DownloadServer[] = [];
       
       $li.find('a').each((_, a) => {
         const link = $(a).attr('href') || '';
         const name = cleanText($(a).text());
         const size = cleanText($li.find('.size').text());
-
-        if (link && name) {
-          servers.push({
-            name,
-            link,
-            size
-          });
-        }
+        if (link && name) servers.push({ name, link, size });
       });
 
       if (servers.length > 0) {
         if (downloadMap.has(quality)) {
-          const existing = downloadMap.get(quality)!;
-          existing.servers.push(...servers);
+          downloadMap.get(quality)!.servers.push(...servers);
         } else {
           downloadMap.set(quality, { quality, servers });
         }
       }
     });
 
-    // Alternative: Look for download table structure
-    if (downloadMap.size === 0) {
-      $('.download table tr, .dl-table tr').each((_, tr) => {
-        const $tr = $(tr);
-        const quality = cleanText($tr.find('td').first().text()) || 'Unknown';
-        const servers: DownloadServer[] = [];
-
-        $tr.find('a').each((_, a) => {
-          const link = $(a).attr('href') || '';
-          const name = cleanText($(a).text());
-          if (link && name) {
-            servers.push({ name, link });
-          }
-        });
-
-        if (servers.length > 0) {
-          downloadMap.set(quality, { quality, servers });
-        }
-      });
-    }
-
-    // Alternative: Simple link parsing
-    if (downloadMap.size === 0) {
-      let currentQuality = 'Unknown';
-      
-      $('.download, .dl-box').find('*').each((_, el) => {
-        const $el = $(el);
-        
-        // Check if this is a quality header
-        if ($el.is('strong, h4, h5')) {
-          const text = cleanText($el.text());
-          if (text.match(/\d+p/) || text.toLowerCase().includes('mp4') || text.toLowerCase().includes('mkv')) {
-            currentQuality = text;
-            if (!downloadMap.has(currentQuality)) {
-              downloadMap.set(currentQuality, { quality: currentQuality, servers: [] });
-            }
-          }
-        }
-        
-        // Check if this is a link
-        if ($el.is('a')) {
-          const link = $el.attr('href') || '';
-          const name = cleanText($el.text());
-          
-          if (link && name && (link.includes('drive.google') || link.includes('mega.nz') || 
-              link.includes('mediafire') || link.includes('mp4upload') || link.includes('zippyshare') ||
-              link.includes('acefile') || link.includes('pixeldrain') || link.includes('solidfiles'))) {
-            
-            if (!downloadMap.has(currentQuality)) {
-              downloadMap.set(currentQuality, { quality: currentQuality, servers: [] });
-            }
-            downloadMap.get(currentQuality)!.servers.push({ name, link });
-          }
-        }
-      });
-    }
-
     result.download = Array.from(downloadMap.values());
-
     return result;
   },
 
-  // ===================== SEARCH WITH PAGINATION (FIXED) =====================
-  parseSearchResults(html: string): PaginatedResult<AnimeInfo> {
+  // ===================== SEARCH RESULTS =====================
+  parseSearchResults(html: string | null): PaginatedResult<AnimeInfo> {
+    if (!html) return { data: [], pagination: { totalPages: 1, currentPage: 1, nextPage: false } };
     const $ = cheerio.load(html);
     const results: AnimeInfo[] = [];
 
-    // Parse from ul.chivsrc li structure (actual Otakudesu search structure)
     $('ul.chivsrc li').each((_, li) => {
       const $li = $(li);
-      
-      // Get the anime link from h2 a
       const $link = $li.find('h2 a');
       const link = $link.attr('href') || '';
       const title = cleanText($link.text());
-      
-      // Get image
       const image = $li.find('img').attr('src') || '';
       
-      // Get other details from the list
       let genre = '';
       let status = '';
       let rating = '';
       
-      // Find the set elements which contain metadata
       $li.find('.set').each((_, set) => {
         const text = $(set).text();
-        if (text.includes('Genre')) {
-          genre = cleanText(text.replace('Genre :', ''));
-        } else if (text.includes('Status')) {
-          status = cleanText(text.replace('Status :', ''));
-        } else if (text.includes('Rating')) {
-          rating = cleanText(text.replace('Rating :', ''));
-        }
+        if (text.includes('Genre')) genre = cleanText(text.replace('Genre :', ''));
+        else if (text.includes('Status')) status = cleanText(text.replace('Status :', ''));
+        else if (text.includes('Rating')) rating = cleanText(text.replace('Rating :', ''));
       });
 
       if (title && link && link.includes('/anime/')) {
         results.push({
-          title,
-          link,
-          slug: extractSlug(link),
-          image,
-          genre,
-          status,
-          score: rating
+          title, link, slug: extractSlug(link),
+          image, genre, status, score: rating
         });
       }
     });
 
-    // Alternative: Try other selectors if above doesn't work
-    if (results.length === 0) {
-      // Try direct link extraction
-      $('a[href*="/anime/"]').each((_, el) => {
-        const $el = $(el);
-        const link = $el.attr('href') || '';
-        
-        // Check if this is in a search result context
-        const $parent = $el.closest('li');
-        if ($parent.length > 0 && link.includes('/anime/')) {
-          const title = cleanText($el.text()) || cleanText($parent.find('h2, h3, h4').text());
-          const image = $parent.find('img').attr('src') || '';
-          
-          if (title && title.length > 2 && !results.find(r => r.link === link)) {
-            results.push({
-              title,
-              link,
-              slug: extractSlug(link),
-              image
-            });
-          }
-        }
-      });
-    }
-
-    // Check pagination
     const currentPage = parseInt($('.pagination .current, .page-numbers.current').text() || '1');
     const hasNextPage = $('.pagination .next, .page-numbers.next').length > 0;
     const totalPages = parseInt($('.pagination .page-numbers').not('.next').not('.prev').last().text()) || 1;
@@ -720,7 +561,8 @@ export const OtakudesuScraper = {
   },
 
   // ===================== GENRE LIST =====================
-  parseGenreList(html: string): GenreInfo[] {
+  parseGenreList(html: string | null): GenreInfo[] {
+    if (!html) return [];
     const $ = cheerio.load(html);
     const genres: GenreInfo[] = [];
 
@@ -728,74 +570,42 @@ export const OtakudesuScraper = {
       const $el = $(el);
       const link = $el.attr('href') || '';
       const name = cleanText($el.text());
-
       if (name && link && name.length > 1 && name.length < 30) {
-        genres.push({
-          name,
-          link,
-          slug: extractSlug(link)
-        });
+        genres.push({ name, link, slug: extractSlug(link) });
       }
     });
 
-    // Remove duplicates
     return genres.filter((genre, index, self) =>
       index === self.findIndex(g => g.slug === genre.slug)
     );
   },
 
-  // ===================== ANIME BY GENRE WITH PAGINATION (FIXED) =====================
-  parseAnimeByGenre(html: string): PaginatedResult<AnimeInfo> {
+  // ===================== ANIME BY GENRE =====================
+  parseAnimeByGenre(html: string | null): PaginatedResult<AnimeInfo> {
+    if (!html) return { data: [], pagination: { totalPages: 1, currentPage: 1, nextPage: false } };
     const $ = cheerio.load(html);
     const list: AnimeInfo[] = [];
 
-    // Parse from .col-md-4 > .col-anime structure (actual Otakudesu genre structure)
     $('.col-md-4').each((_, col) => {
       const $col = $(col);
-      
-      // Get title and link from .col-anime-title a
       const $titleLink = $col.find('.col-anime-title a');
       const link = $titleLink.attr('href') || '';
       const title = cleanText($titleLink.text());
-      
-      // Get image from .col-anime-cover img
       const image = $col.find('.col-anime-cover img, img').attr('src') || '';
       
-      // Get studio
-      const studio = cleanText($col.find('.col-anime-studio').text());
-      
-      // Get episode count
-      const episode = cleanText($col.find('.col-anime-eps').text());
-      
-      // Get rating
-      const rating = cleanText($col.find('.col-anime-rating').text());
-      
-      // Get genres
-      const genre = cleanText($col.find('.col-anime-genre').text());
-      
-      // Get synopsis
-      const synopsis = cleanText($col.find('.col-synopsis p').text());
-      
-      // Get release date
-      const releaseDate = cleanText($col.find('.col-anime-date').text());
-
       if (title && link && link.includes('/anime/')) {
         list.push({
-          title,
-          link,
-          slug: extractSlug(link),
-          image,
-          studio,
-          episode,
-          score: rating,
-          genre,
-          synopsis,
-          uploadedAt: releaseDate
+          title, link, slug: extractSlug(link), image,
+          studio: cleanText($col.find('.col-anime-studio').text()),
+          episode: cleanText($col.find('.col-anime-eps').text()),
+          score: cleanText($col.find('.col-anime-rating').text()),
+          genre: cleanText($col.find('.col-anime-genre').text()),
+          synopsis: cleanText($col.find('.col-synopsis p').text()),
+          uploadedAt: cleanText($col.find('.col-anime-date').text())
         });
       }
     });
 
-    // Check pagination
     const currentPage = parseInt($('.pagination .current, .page-numbers.current').text() || '1');
     const hasNextPage = $('.pagination .next, .page-numbers.next').length > 0;
     const totalPages = parseInt($('.pagination .page-numbers').not('.next').not('.prev').last().text()) || 1;
@@ -811,165 +621,68 @@ export const OtakudesuScraper = {
   },
 
   // ===================== SCHEDULE =====================
-  parseSchedule(html: string): ScheduleInfo[] {
+  parseSchedule(html: string | null): ScheduleInfo[] {
+    if (!html) return [];
     const $ = cheerio.load(html);
     const schedule: ScheduleInfo[] = [];
     const dayNames = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 
-    // Find schedule container
-    $('.kgjdwl3, .jadwal, .schedule').each((_, section) => {
+    $('.kgjdwl3, .jadwal, .schedule, .kglist2').each((_, section) => {
       const $section = $(section);
       const dayTitle = cleanText($section.find('h2').text());
-      
-      // Find which day
       const day = dayNames.find(d => dayTitle.toLowerCase().includes(d.toLowerCase()));
       
       if (day) {
         const anime: AnimeInfo[] = [];
-        
         $section.find('li a, .anime-item a').each((_, a) => {
           const link = $(a).attr('href') || '';
           const title = cleanText($(a).text());
-
-          if (title && link) {
-            anime.push({
-              title,
-              link,
-              slug: extractSlug(link)
-            });
-          }
+          if (title && link) anime.push({ title, link, slug: extractSlug(link) });
         });
-
-        if (anime.length > 0) {
-          schedule.push({ day, anime });
-        }
+        if (anime.length > 0) schedule.push({ day, anime });
       }
     });
-
-    // Alternative parsing
-    if (schedule.length === 0) {
-      dayNames.forEach(day => {
-        const dayLower = day.toLowerCase();
-        const dayRegex = new RegExp(`<h2[^>]*>${day}</h2>`, 'i');
-        
-        if (dayRegex.test(html)) {
-          // Find content after this day header
-          const $daySection = $(`h2:contains("${day}")`).parent();
-          const anime: AnimeInfo[] = [];
-          
-          $daySection.find('li a, ul a').each((_, a) => {
-            const link = $(a).attr('href') || '';
-            const title = cleanText($(a).text());
-
-            if (title && link) {
-              anime.push({
-                title,
-                link,
-                slug: extractSlug(link)
-              });
-            }
-          });
-
-          if (anime.length > 0) {
-            schedule.push({ day, anime });
-          }
-        }
-      });
-    }
-
-    // Another alternative - look for kglist2
-    if (schedule.length === 0) {
-      $('.kglist2').each((_, el) => {
-        const $el = $(el);
-        const dayTitle = cleanText($el.find('h2').text());
-        const day = dayNames.find(d => dayTitle.toLowerCase().includes(d.toLowerCase()));
-        
-        if (day) {
-          const anime: AnimeInfo[] = [];
-          
-          $el.find('li a').each((_, a) => {
-            const link = $(a).attr('href') || '';
-            const title = cleanText($(a).text());
-
-            if (title && link) {
-              anime.push({
-                title,
-                link,
-                slug: extractSlug(link)
-              });
-            }
-          });
-
-          if (anime.length > 0) {
-            schedule.push({ day, anime });
-          }
-        }
-      });
-    }
 
     return schedule;
   },
 
   // ===================== BATCH DETAIL =====================
-  parseBatchDetail(html: string): { title: string; download: DownloadQuality[] } {
+  parseBatchDetail(html: string | null): { title: string; download: DownloadQuality[] } {
+    if (!html) return { title: '', download: [] };
     const $ = cheerio.load(html);
-    const result = {
-      title: '',
-      download: [] as DownloadQuality[]
-    };
+    const result = { title: '', download: [] as DownloadQuality[] };
 
     result.title = cleanText($('.jdlrx h1, h1.title').text());
-
     const downloadMap: Map<string, DownloadQuality> = new Map();
 
-    // Parse batch download links
     $('.download ul li, .dl-box li').each((_, el) => {
       const $li = $(el);
       const quality = cleanText($li.find('strong').text()) || 'Unknown';
       const servers: DownloadServer[] = [];
-
       $li.find('a').each((_, a) => {
         const link = $(a).attr('href') || '';
         const name = cleanText($(a).text());
-
-        if (link && name) {
-          servers.push({ name, link });
-        }
+        if (link && name) servers.push({ name, link });
       });
-
-      if (servers.length > 0) {
-        downloadMap.set(quality, { quality, servers });
-      }
+      if (servers.length > 0) downloadMap.set(quality, { quality, servers });
     });
 
     result.download = Array.from(downloadMap.values());
-
     return result;
   },
 
-  // ===================== SERVER LIST (Stream Servers by Quality) =====================
-  parseServerList(html: string): ServerList {
+  // ===================== SERVER LIST =====================
+  parseServerList(html: string | null): ServerList {
+    if (!html) return { title: '', qualities: [] };
     const $ = cheerio.load(html);
-    
-    const result: ServerList = {
-      title: '',
-      qualities: []
-    };
-
-    // Title
-    result.title = cleanText($('.jdlrx h1, h1.title, .posttl').text());
-
-    // Parse from .mirrorstream ul lists
+    const result: ServerList = { title: cleanText($('.jdlrx h1, h1.title, .posttl').text()), qualities: [] };
     const qualityMap: Map<string, ServerInfo[]> = new Map();
 
     $('.mirrorstream ul').each((_, ul) => {
       const $ul = $(ul);
       const ulClass = $ul.attr('class') || '';
-
-      // Extract quality from class (m360p -> 360p, m480p -> 480p)
       const qualityMatch = ulClass.match(/m(\d+p)/);
       const quality = qualityMatch ? qualityMatch[1] : ulClass.replace('m', '');
-
       const servers: ServerInfo[] = [];
 
       $ul.find('li a[data-content]').each((idx, a) => {
@@ -978,39 +691,21 @@ export const OtakudesuScraper = {
         const dataContent = $a.attr('data-content') || '';
 
         if (name && dataContent) {
-          // Generate server ID from decoded content
           const decoded = decodeBase64(dataContent);
           let serverId = `${name.toLowerCase()}-${quality}-${idx}`;
-
-          // Try to extract ID from decoded JSON
           try {
             const parsed = JSON.parse(decoded);
             if (parsed.id && parsed.i !== undefined) {
               serverId = `${name.toLowerCase()}-${parsed.id}-${parsed.i}`;
             }
-          } catch {
-            // Use default serverId
-          }
-
-          servers.push({
-            name,
-            serverId,
-            dataContent
-          });
+          } catch {}
+          servers.push({ name, serverId, dataContent });
         }
       });
-
-      if (servers.length > 0) {
-        qualityMap.set(quality, servers);
-      }
+      if (servers.length > 0) qualityMap.set(quality, servers);
     });
 
-    // Convert to array
-    result.qualities = Array.from(qualityMap.entries()).map(([quality, servers]) => ({
-      quality,
-      servers
-    }));
-
+    result.qualities = Array.from(qualityMap.entries()).map(([quality, servers]) => ({ quality, servers }));
     return result;
   }
 };

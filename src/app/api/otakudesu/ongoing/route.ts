@@ -12,13 +12,13 @@ export async function GET(request: NextRequest) {
       ? `${OtakudesuScraper.baseUrl}/ongoing-anime/`
       : `${OtakudesuScraper.baseUrl}/ongoing-anime/page/${page}/`;
     
-    const html = await fetchHtml(url);
+    const result = await fetchHtml(url);
     
-    if (!html) {
-      return createErrorResponse(request, 'Failed to fetch ongoing anime data', 500);
+    if (result.status === 'error' || !result.data) {
+      return createErrorResponse(request, result.message || 'Failed to fetch ongoing anime data', 500);
     }
     
-    const data = OtakudesuScraper.parseAnimeList(html);
+    const data = OtakudesuScraper.parseAnimeList(result.data);
     
     return createApiResponse(request, 'ongoing', {
       status: 'success',

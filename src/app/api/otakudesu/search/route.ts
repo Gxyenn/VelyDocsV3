@@ -16,21 +16,21 @@ export async function GET(request: NextRequest) {
       ? `${OtakudesuScraper.baseUrl}/?s=${encodeURIComponent(query)}&post_type=anime`
       : `${OtakudesuScraper.baseUrl}/page/${page}/?s=${encodeURIComponent(query)}&post_type=anime`;
     
-    const html = await fetchHtml(url);
+    const result = await fetchHtml(url);
     
-    if (!html) {
-      return createErrorResponse(request, 'Failed to perform search', 500);
+    if (result.status === 'error' || !result.data) {
+      return createErrorResponse(request, result.message || 'Failed to perform search', 500);
     }
     
-    const result = OtakudesuScraper.parseSearchResults(html);
+    const data = OtakudesuScraper.parseSearchResults(result.data);
     
     return createApiResponse(request, 'search', {
       status: 'success',
       source: 'otakudesu',
       query,
-      pagination: result.pagination,
-      total: result.data.length,
-      data: result.data
+      pagination: data.pagination,
+      total: data.data.length,
+      data: data.data
     });
   } catch (error) {
     console.error('Otakudesu search error:', error);

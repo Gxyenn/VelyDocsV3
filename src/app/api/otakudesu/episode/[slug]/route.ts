@@ -14,16 +14,16 @@ export async function GET(
     }
     
     const url = `${OtakudesuScraper.baseUrl}/episode/${slug}/`;
-    const html = await fetchHtml(url);
+    const result = await fetchHtml(url);
     
-    if (!html) {
-      return createErrorResponse(request, 'Episode not found', 404, { slug });
+    if (result.status === 'error' || !result.data) {
+      return createErrorResponse(request, result.message || 'Episode not found', 404, { slug });
     }
     
-    const data = OtakudesuScraper.parseEpisodeDetail(html);
+    const data = OtakudesuScraper.parseEpisodeDetail(result.data);
     
-    if (!data.title) {
-      return createErrorResponse(request, 'Episode not found', 404, { slug });
+    if (!data || !data.title) {
+      return createErrorResponse(request, 'Episode detail parsing failed', 500, { slug });
     }
     
     return createApiResponse(request, 'episode/detail', {

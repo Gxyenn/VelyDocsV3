@@ -4,13 +4,13 @@ import { createApiResponse, createErrorResponse } from '@/lib/api-response';
 
 export async function GET(request: NextRequest) {
   try {
-    const html = await fetchHtml(`${OtakudesuScraper.baseUrl}/genre-list/`);
+    const result = await fetchHtml(`${OtakudesuScraper.baseUrl}/genre-list/`);
     
-    if (!html) {
-      return createErrorResponse(request, 'Failed to fetch genres', 500);
+    if (result.status === 'error' || !result.data) {
+      return createErrorResponse(request, result.message || 'Failed to fetch genres', 500);
     }
     
-    const genres = OtakudesuScraper.parseGenreList(html);
+    const genres = OtakudesuScraper.parseGenreList(result.data);
     
     return createApiResponse(request, 'genres', {
       status: 'success',

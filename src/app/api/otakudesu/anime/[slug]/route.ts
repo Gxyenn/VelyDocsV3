@@ -14,16 +14,16 @@ export async function GET(
     }
     
     const url = `${OtakudesuScraper.baseUrl}/anime/${slug}/`;
-    const html = await fetchHtml(url);
+    const result = await fetchHtml(url);
     
-    if (!html) {
-      return createErrorResponse(request, 'Anime not found', 404, { slug });
+    if (result.status === 'error' || !result.data) {
+      return createErrorResponse(request, result.message || 'Anime not found', 404, { slug });
     }
     
-    const data = OtakudesuScraper.parseAnimeDetail(html);
+    const data = OtakudesuScraper.parseAnimeDetail(result.data);
     
-    if (!data.title) {
-      return createErrorResponse(request, 'Anime not found', 404, { slug });
+    if (!data || !data.title) {
+      return createErrorResponse(request, 'Anime detail parsing failed', 500, { slug });
     }
     
     return createApiResponse(request, 'anime/detail', {

@@ -4,13 +4,13 @@ import { createApiResponse, createErrorResponse } from '@/lib/api-response';
 
 export async function GET(request: NextRequest) {
   try {
-    const html = await fetchHtml(OtakudesuScraper.baseUrl);
+    const result = await fetchHtml(OtakudesuScraper.baseUrl);
     
-    if (!html) {
-      return createErrorResponse(request, 'Failed to fetch data from Otakudesu', 500);
+    if (result.status === 'error' || !result.data) {
+      return createErrorResponse(request, result.message || 'Failed to fetch data from Otakudesu', 500);
     }
     
-    const data = OtakudesuScraper.parseHome(html);
+    const data = OtakudesuScraper.parseHome(result.data);
     
     return createApiResponse(request, 'home', {
       status: 'success',
